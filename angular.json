@@ -32,7 +32,9 @@
               "src/styles.scss",
               "src/tailwind.scss"
             ],
-            "scripts": [],
+            "scripts": [
+              "node_modules/plotly.js/dist/plotly-basic.min.js"
+            ],
             "customWebpackConfig": {
               "path": "extra-webpack.config.js"
             }

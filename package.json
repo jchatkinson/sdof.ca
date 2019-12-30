@@ -19,6 +19,8 @@
     "@angular/platform-browser": "~8.2.14",
     "@angular/platform-browser-dynamic": "~8.2.14",
     "@angular/router": "~8.2.14",
+    "angular-plotly.js": "^1.4.2",
+    "plotly.js": "^1.51.3",
     "rxjs": "~6.4.0",
     "tailwindcss": "^1.1.4",
     "tslib": "^1.10.0",

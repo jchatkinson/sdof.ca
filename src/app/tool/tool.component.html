@@ -1,0 +1,100 @@
+<button (click)="this.debug()">Dump Values</button>
+
+<div class="container mx-auto flex flex-row flex-wrap">
+    <div class="w-full lg:mr-4 lg:max-w-xs">
+        <form novalidate class="card" #systemForm="ngForm"> 
+            <fieldset>
+                <legend class="text-teal-500 mb-4">System Properties</legend>
+                <div class="mb-4">
+                    <label for="period" class="input-label">Period (sec)</label>
+                    <input id="period" name="period" type="number" placeholder="period (eg. 0.5 seconds)" class="input" [ngModel]="data.period">
+                </div>
+                <div class="mb-4">
+                    <label class="input-label" for="damping">Damping (%)</label>
+                    <input id="damping" name="damping" type="number" placeholder="damping (eg. 5%)" class="input" [ngModel]="data.damp">
+                </div>
+            </fieldset>
+        </form>
+        <form novalidate class="card" #exciteForm="ngForm">
+            <fieldset>
+                <legend class="text-teal-500 mb-4">Excitation Properties</legend>
+                <div class="mb-4">
+                    <label for="func" class="input-label">Function Type</label>
+                    <select id="func" name="fid" class="selector" [(ngModel)]="fid">
+                        <optgroup label="Harmonic">
+                            <option [ngValue]=0>Sine Wave</option>
+                            <option [ngValue]=1>Sawtooth Wave</option>
+                            <option [ngValue]=2>Square Wave</option>
+                        </optgroup>
+                        <optgroup label="Impulse">
+                            <option [ngValue]=3>Ramp up</option>
+                            <option [ngValue]=4>Ramp down</option>
+                        </optgroup>
+                        <optgroup label="From File">
+                            <option [ngValue]=5>Acceleration File</option>
+                            <option [ngValue]=6>Time and Acceleration File</option>
+                            <option [ngValue]=7>PEER NGA File</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="mb-4" *ngIf="fid>4">
+                    <label for="procfile" class="input-label">File upload</label>
+                    <input id="procfile" name="procfile" type="file" class="input text-xs" [ngModel]>
+                    <span class="text-xs text-gray-600" [innerHTML]="data.func.note"></span>
+                </div>
+
+                <div class="mb-4"  *ngIf="fid<3">
+                    <label for="funcperiod" class="input-label">Excitation Period (sec)</label>
+                    <input id="funcperiod" name="funcperiod" type="number" placeholder="period (eg. 0.5 sec)" class="input" [ngModel]="data.funcperiod">
+                </div>
+                <div class="mb-4" *ngIf="fid<5">
+                    <label class="input-label" for="amp">Amplitude</label>
+                    <input id="amp" name="amp" type="number" placeholder="peak value (eg. 6.0 m/s²)" class="input" [ngModel]="data.amp">
+                </div>
+                <div class="mb-4" *ngIf="fid<6">
+                    <label class="input-label" for="dt">Time Step</label>
+                    <input id="dt" name="dt" type="number" placeholder="time step (eg. 0.05 sec)" class="input" [ngModel]="data.dt">
+                </div>
+                <div class="mb-4">
+                    <label class="input-label" for="excitetime">Excitation Duration</label>
+                    <input id="excitetime" name="excitetime"  type="number" placeholder="duration (eg. 5 sec)" class="input" [ngModel]="data.excitetime">
+                </div>
+                <div class="mb-4">
+                    <label class="input-label" for="analysistime">Total Analysis Duration</label>
+                    <input id="analysistime" name="analysistime" type="number" placeholder="duration (eg. 20 sec)" class="input" [ngModel]="data.totaltime">
+                </div>
+                <div class="mb-4" *ngIf="fid<3">
+                    <label class="input-label" for="hshift">Horizontal Shift</label>
+                    <input id="hshift" name="hshift" type="number" placeholder="shift all values in time" class="input" [ngModel]="data.hshift">
+                </div>
+                <div class="mb-4" *ngIf="fid<3">
+                    <label class="input-label" for="vshift">Vertical Shift </label>
+                    <input id="vshift" name="vshift" type="number" placeholder="shift all values in accel" class="input" [ngModel]="data.vshift">
+                </div>
+                <div class="mb-4" *ngIf="fid>4">
+                    <label class="input-label" for="sf">Scale Factor</label>
+                    <input id="sf" name="sf" type="number" placeholder="acceleration scale factor" class="input" [ngModel]="data.scalefactor">
+                </div>
+            </fieldset>
+        </form>
+    </div>
+    <div class="card flex-grow">
+        <form novalidate>
+            <fieldset>
+                <legend class="text-teal-500 mb-4">Plot Controls</legend>
+                <div class="mb-4">
+                    <label for="yaxis" class="input-label">Y-Axis Parameter</label>
+                    <select id="yaxis" class="selector">
+                        <option *ngFor="let opt of plotOptions">{{ opt.name }}</option>
+                    </select>
+                </div>
+            </fieldset>
+        </form>
+        <p class="text-teal-500 my-4">Response</p>
+            <plotly-plot 
+            [data]="plotData"
+            [layout]="plotLayout"
+            [useResizeHandler]="true" 
+            [style]="{position: 'relative', width: '100%'}"></plotly-plot>
+    </div>
+</div>
