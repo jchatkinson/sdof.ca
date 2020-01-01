@@ -17,5 +17,8 @@
 .card {
     @apply bg-white shadow-md rounded px-6 pt-4 pb-6 mb-4
 };
+.ng-invalid:not(form)  {
+    @apply border-l-4 border-red-800
+};
 
 @tailwind utilities;

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { Observable, AsyncSubject } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
@@ -12,11 +13,14 @@ export class AnalysisService {
     {name:'rampdn', fullname:'Ramp Down',type:'Impulse',note:''},
     {name:'acc',fullname:'File Containing Accelerations',type:'From File',note:'Note: The file must formatted such that each row contains <code>[acceleration]</code> at a constant time interval'},
     {name:'timeacc',fullname:'File Containing Time and Acceleration',type:'From File',note:'Note: The file must formatted such that each row contains <code>[time,acceleration]</code>'},
-    {name:'peernga',fullname:'PEER NGA File',type:'From File',note:'Note: The file must formatted as an unaltered <a class="block underline" href="http://ngawest2.berkeley.edu/" target="_blank">PEER NGA Record</a>'}
+	{name:'peernga',fullname:'PEER NGA File',type:'From File',note:'Note: The file must formatted as an unaltered <a class="block underline" href="http://ngawest2.berkeley.edu/" target="_blank">PEER NGA Record</a>'},
+	{name: 'kobe', fullname: 'Kobe (1995)', type:'Ground Motion', note:'This is an unscaled ground motion from the 1995 Kobe Earthquake, Kakokawa Station, 000 Component' }
   ];
+
   data: IAnalysisData = {
     period: 0.5, 
     damp: 5, 
+    fid: 0,
     func: this.functionTypes[0], 
     funcperiod: 0.4, 
     amp: 10,
@@ -25,27 +29,76 @@ export class AnalysisService {
     totaltime: 15, 
     scalefactor: 9.81, 
     vshift: 0, 
-    hshift: 0
+    hshift: 0,
+	yaxis: 0,
+	series: [[{x:0, y:0}],[{x:0, y:0}],[{x:0, y:0}],[{x:0, y:0}],[{x:0, y:0}]],
+	rawfile: [],
+	procfile: [],
+	};
+
+	constructor() { 
+		this.data.series[0] = this.createTimeSeries(this.data)
+	}
+
+  getFunctionType(fid?:number) {
+    if (fid) {
+      return this.functionTypes[fid]
+    } else {
+      return this.functionTypes;
+    }
   };
 
-  constructor() { 
-    this.data.series = this.createTimeSeries(this.data)
-  }
-
-  getFunctionTypes() {
-    return this.functionTypes;
-  }
   getData(field?: string) {
     if (field) {
       return this.data[field]
     } else {
-      return this.data;
+      return Object.assign({}, this.data);
     }
+  }
+
+  // function to process a user input text file
+  processTextFile(inputFile: File): Observable<{raw:any, processed:any}> {
+	console.log('processing file', inputFile);
+	let fileReader = new FileReader();
+	let fileData: {raw:any, processed:any} = {raw:null, processed:null};
+	let result = new AsyncSubject<{raw:any, processed:any}>();
+	fileReader.onloadend = ()=>{
+		let vals, procfile=[];
+		let rawfile = fileReader.result.toString();
+		fileData.raw = rawfile;
+		rawfile = rawfile.replace(/\s\./g,"0.");
+		let lines = rawfile.split(/\n/);
+		var patt = new RegExp(/[A-z]{2,}/);
+		lines.forEach(line => {
+			if (!patt.test(line)) { //line doesn't contain text
+				vals = line.split(/[\s,;\t]+/);					
+				procfile.push(...vals);
+			}
+		})
+		//remove any empty strings
+		for (let line=0; line < procfile.length; line++) { 
+			if(procfile[line] === "") {
+				procfile.splice(line,1); 
+				line--;
+			}; 
+		};
+		//convert array elements from strings to numbers
+		procfile = procfile.map(Number);
+
+		fileData.processed = procfile;
+		result.next(fileData)
+		result.complete();
+	}
+	fileReader.readAsText(inputFile);
+	return result;
   }
 
   // function to create the analysis time series
   createTimeSeries(data: IAnalysisData) {
-		let npts = Math.ceil(data.excitetime / data.dt);
+	if (Math.min(data.dt, data.funcperiod, data.excitetime) <= 0.0) {
+		return [{x:0,y:0}];
+	};
+	let npts = Math.ceil(data.excitetime / data.dt);
     let series = [];
     
 		switch(data.func.name) {
@@ -84,7 +137,7 @@ export class AnalysisService {
 				break;
 			case 'acc': //data.procfile is array of acc values [a1,a2,a3,...]
 				var eqn = function (data: IAnalysisData, t: number) { 
-					if (data.procfile.length > 0 && t <= data.excitetime && t<=data.dt*data.procfile.length) {
+					if (data.procfile.length > 0 && t <= data.excitetime && t<=data.dt*(data.procfile.length-1)) {
 						return data.scalefactor*data.procfile[Math.round(t / data.dt)];
 					} else {
 						return 0;
@@ -128,7 +181,8 @@ export class AnalysisService {
 					};
 				}				
 				break;			
-			}; 
+      };
+      
 		let yt=0.0;
 		let i: number, t: number;
 		for (i=0; i<npts-1; i++) {
@@ -152,53 +206,54 @@ export class AnalysisService {
 		return series;
   };
   
-  analyze(T: number, zeta: number, ag: any[], dt: number, ttotal: number): ({u: IData[], a:IData[], v:IData[]}){
-    		//check if zeta is in decimal or percent notation
-		if (zeta > 1.0) {
-			zeta = zeta/100.0
-		};
-		var t = 0;
-		var npts_ag = ag.length;
-		var npts_total = Math.ceil(ttotal/dt);
-		var w = 2*Math.PI/T;
-		var m=1000; 
-		var k = w*w*m;
-		var wd = w*Math.sqrt(1.0-zeta*zeta);
-		var e = Math.exp(-zeta*w*dt);
-		var s = Math.sin(wd*dt);
-		var c = Math.cos(wd*dt);
-		//set inital conditions
-		var u=[{x:0,y:0}];
-		var v=[{x:0,y:0}];
-		var pr = [{x:0,y: k*u[0].y}];
-		var y0 = -ag[0].y - 2.0*zeta*w*v[0].y - pr[0].y/m;
-		var a=[{x:0,y:y0}];
-		//recurrence formula coefficiencts
-		var A  = e*(zeta/Math.sqrt(1.0-zeta*zeta)*s + c);
-    var B  = e*(1.0/wd*s);
-    var C  = -1.0/(w*w)*(2.0*zeta/(w*dt) + e*(((1.0-2.0*zeta*zeta)/(wd*dt) - zeta/Math.sqrt(1.0-zeta*zeta))*s - (1.0+2.0*zeta/(w*dt))*c));
-    var D  = -1.0/(w*w)*(1.0-2.0*zeta/(w*dt) + e*((2.0*zeta*zeta-1.0)/(wd*dt)*s + 2.0*zeta/(w*dt)*c));
-    var Ap = -e*(w/Math.sqrt(1.0-zeta*zeta)*s);
-    var Bp = e*(c-zeta/Math.sqrt(1.0-zeta*zeta)*s);
-    var Cp = -1.0/(w*w)*(-1.0/dt + e*((w/Math.sqrt(1.0-zeta*zeta) + zeta/(dt*Math.sqrt(1.0-zeta*zeta)))*s + 1.0/dt*c));
-    var Dp = -1.0/(w*w*dt)*(1.0 - e*(zeta/Math.sqrt(1.0-zeta*zeta)*s+c));
-    	//loop through each steps
-    let i: number, agi: number, agip1: number;
-    	for (i=0; i<npts_total-1; i++) {
-    		agi = (i<npts_ag) ? ag[i].y : 0.0;
-        	agip1 = (i<npts_ag-1) ? ag[i+1].y : 0.0;
-        	t = i*dt;
-        	u.push({x:t, y: A * u[i].y + B * v[i].y + C * agi + D * agip1});
-        	v.push({x:t,y:Ap * u[i].y + Bp * v[i].y + Cp * agi + Dp * agip1});
-			pr.push({x:t,y:k*u[i+1].y}); 
-			a.push({x:t,y:-agip1 - 2.0*zeta*w*v[i+1].y - pr[i+1].y/m});
-    	};
-		return {
-			u: u,		
-			v: v,
-			a: a
-		};
-  }
+analyze(T: number, zeta: number, ag: any[], dt: number, ttotal: number): ({ u: IData[], a: IData[], v: IData[] }) {
+	zeta = zeta / 100.0
+	if (dt === 0) {
+		return;
+	}
+	var t = 0;
+	var npts_ag = ag.length;
+	var npts_total = Math.ceil(ttotal / dt);
+	var w = 2 * Math.PI / T;
+	var m = 1000;
+	var k = w * w * m;
+	var wd = w * Math.sqrt(1.0 - zeta * zeta);
+	var e = Math.exp(-zeta * w * dt);
+	var s = Math.sin(wd * dt);
+	var c = Math.cos(wd * dt);
+	//set inital conditions
+	var u = [{ x: 0, y: 0 }];
+	var v = [{ x: 0, y: 0 }];
+	var pr = [{ x: 0, y: k * u[0].y }];
+	var y0 = -ag[0] - 2.0 * zeta * w * v[0].y - pr[0].y / m;
+	var a = [{ x: 0, y: y0 }];
+	//recurrence formula coefficiencts
+	var A = e * (zeta / Math.sqrt(1.0 - zeta * zeta) * s + c);
+	var B = e * (1.0 / wd * s);
+	var C = -1.0 / (w * w) * (2.0 * zeta / (w * dt) + e * (((1.0 - 2.0 * zeta * zeta) / (wd * dt) - zeta / Math.sqrt(1.0 - zeta * zeta)) * s - (1.0 + 2.0 * zeta / (w * dt)) * c));
+	var D = -1.0 / (w * w) * (1.0 - 2.0 * zeta / (w * dt) + e * ((2.0 * zeta * zeta - 1.0) / (wd * dt) * s + 2.0 * zeta / (w * dt) * c));
+	var Ap = -e * (w / Math.sqrt(1.0 - zeta * zeta) * s);
+	var Bp = e * (c - zeta / Math.sqrt(1.0 - zeta * zeta) * s);
+	var Cp = -1.0 / (w * w) * (-1.0 / dt + e * ((w / Math.sqrt(1.0 - zeta * zeta) + zeta / (dt * Math.sqrt(1.0 - zeta * zeta))) * s + 1.0 / dt * c));
+	var Dp = -1.0 / (w * w * dt) * (1.0 - e * (zeta / Math.sqrt(1.0 - zeta * zeta) * s + c));
+
+	//loop through each steps
+	let i: number, agi: number, agip1: number;
+	for (i = 0; i < npts_total - 1; i++) {
+		agi = (i < npts_ag) ? ag[i] : 0.0;
+		agip1 = (i < npts_ag - 1) ? ag[i + 1] : 0.0;
+		t = i * dt;
+		u.push({ x: t, y: A * u[i].y + B * v[i].y + C * agi + D * agip1 });
+		v.push({ x: t, y: Ap * u[i].y + Bp * v[i].y + Cp * agi + Dp * agip1 });
+		pr.push({ x: t, y: k * u[i + 1].y });
+		a.push({ x: t, y: -agip1 - 2.0 * zeta * w * v[i + 1].y - pr[i + 1].y / m });
+	};
+	return {
+		u: u,
+		v: v,
+		a: a
+	};
+}
 }
 
 export interface IData {
@@ -216,6 +271,7 @@ export interface IAnalysisFunction {
 export interface IAnalysisData {
   period: number;
   damp: number;
+  fid: number;
   func: IAnalysisFunction;
   funcperiod?: number;
   totaltime: number;
@@ -225,9 +281,20 @@ export interface IAnalysisData {
   scalefactor?: number;
   vshift?: number;
   hshift?: number;
-  series?: IData[];
+  series: IData[][];
   response?: any[];
   rawfile?: any;
   procfile?: any;
+  file?: any;
   npts?: number;
+  yaxis: number;
+}
+
+export interface IPlotData {
+	name: string,
+	x: number[],
+	y: number[],
+	type: string, 
+	mode?: string, 
+	marker?: {color: string}
 }

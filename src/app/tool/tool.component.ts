@@ -1,6 +1,7 @@
-import { Component, OnInit, ViewChild, AfterContentInit } from '@angular/core';
-import { AnalysisService, IAnalysisData } from '../analysis.service';
+import { Component, OnInit, ViewChild, AfterContentInit, OnDestroy } from '@angular/core';
+import { AnalysisService, IAnalysisData, IData, IPlotData } from '../analysis.service';
 import { NgForm } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
 @Component({
@@ -8,63 +9,97 @@ import { debounceTime } from 'rxjs/operators';
   templateUrl: './tool.component.html',
   styles: []
 })
-export class ToolComponent implements OnInit, AfterContentInit {
-  @ViewChild('systemForm', {static:true}) systemForm: NgForm;
-  @ViewChild('exciteForm', {static:true}) exciteForm: NgForm;
+export class ToolComponent implements OnInit, AfterContentInit, OnDestroy {
+  @ViewChild('myform', {static:true}) myform: NgForm;
+  @ViewChild('plotControl', {static:true}) plotControl: NgForm;
 
-  functionTypes: any[];
-  plotOptions = [{name: "Excitation"},{name: "Response Spectrum"},{name: "Acceleration"},{name: "Velocity"},{name: "Displacement"}];
-  plotData = [{ x: [], y: [], type: 'scatter', mode: 'lines+points', marker: {color: 'teal'} }];
-  plotLayout = {autosize: true, title: 'Input Excitation'};
+  functionTypes: any;
+  plotOptions = [{name: "Excitation", val: 0},{name: "Response Spectrum", val: 1},{name: "Acceleration", val: 2},{name: "Velocity", val: 3},{name: "Displacement", val: 4}];
+  plotData = [{name: 'Excitation', x:[0,1,2], y:[0,1,2], type:'scatter', mode:'lines+points', marker:{color: 'teal'}}];
+  plotLayout = {autosize: true};
   data: IAnalysisData;
-  fid = 0;
-
+  $subs: Subscription[] = [];
+  
   constructor(private as: AnalysisService) {
     this.as = as;
    }
 
   ngOnInit() {
-    this.functionTypes = this.as.getFunctionTypes();
+    this.functionTypes = this.as.getFunctionType();
     this.data = this.as.getData();
-    this.plotData[0].x = this.data.series.map(d => d.x);
-    this.plotData[0].y = this.data.series.map(d => d.y);
+    this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
   }
 
   ngAfterContentInit() {
-    this.systemForm.form.valueChanges.pipe(debounceTime(200)).subscribe({
-      next: this.handleChange.bind(this),
-      error: this.handleError.bind(this)
-    });
-    this.exciteForm.form.valueChanges.pipe(debounceTime(200)).subscribe((change: Object)=>{
-      if (change["fid"]) {
-        this.data.func = this.functionTypes[change["fid"]];
-      }
-      if (change["fid"] < 5) {
-        this.data.series = this.as.createTimeSeries(this.data);
-        this.plotData[0].x = this.data.series.map(d => d.x);
-        this.plotData[0].y = this.data.series.map(d => d.y);
+    this.$subs.push(this.myform.form.valueChanges.pipe(debounceTime(250)).subscribe(change => {
+      // recalculate derived properties
+      if (this.data.dt <= 0) {
+        console.warn('dt needs to be greater than zero');
       } else {
-        //need to wait for file upload
-        this.plotData[0].x = [];
-        this.plotData[0].y = [];
+        if (this.myform.valid) {
+          this.data.series[0] = this.as.createTimeSeries(this.data);
+          let result = this.as.analyze(this.data.period, this.data.damp, this.data.series[0].map(pt=>pt.y), this.data.dt, this.data.totaltime);
+          this.data.series[2] = result.u;
+          this.data.series[3] = result.v;
+          this.data.series[4] = result.a;
+          this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
+        }
       }
-    });
+    }));
   };
+
+  ngOnDestroy() {
+    this.$subs.forEach(s => s.unsubscribe());
+  }
 
   handleError(err) {
     console.error(err);
   }
   handleChange(change) {
-    // console.log(change);
+    console.log(change);
+  }
+  handleSelectChange() {
+    this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
+  };
+  handleTextFile($event){
+    this.as.processTextFile($event.target.files[0]).subscribe(result=>{
+      this.data.procfile = result.processed;
+      this.data.rawfile = result.raw;
+      this.data.series[0] = this.as.createTimeSeries(this.data);
+      this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
+    });
+  }
+  resetForm(){
+    let initalData: IAnalysisData = this.as.getData();
+    console.log(initalData)
+    Object.assign(this.data, initalData);
+    // this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
   }
 
+  updatePlot(name:string, newdata: IData[]) {
+    this.plotData = [{
+      name: name,
+      x: newdata.map(pt=>pt.x),
+      y: newdata.map(pt=>pt.y),
+      type: 'scatter', 
+      mode: 'lines+points', 
+      marker: {color: 'teal'}
+    }];
+  };
+
   functionChange(id: number) {
-    console.log('function changed to:', id)
     this.data.func = this.functionTypes[id];
+    if (id===8) {
+      this.data.dt = 0.01;
+      this.data.excitetime = 40;
+      this.data.totaltime = 60;
+      this.data.scalefactor = 9.81;      
+    }
   }
 
   debug() {
-    console.log(this.data);
+    console.log('data:\n:',this.data);
+    console.log('plotData:\n',this.plotData);
   }
 
 }
