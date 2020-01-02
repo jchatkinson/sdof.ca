@@ -74,13 +74,13 @@
                     <label class="input-label" for="scalefactor">Scale Factor</label>
                     <input id="scalefactor" name="scalefactor" type="number" placeholder="acceleration scale factor" class="input" [(ngModel)]="data.scalefactor" step=0.1>
                 </div>
-                <button class="text-teal-700 font-bold float-right" (click)="resetForm()">Reset</button>
-                <button class="text-teal-700 font-bold float-left" (click)="this.debug()">Dump Values</button>
+                <button class="text-gray-500 text-xs font-semibold float-right hover:text-teal-500" (click)="resetForm()">Reset</button>
+                <!-- <button class="text-teal-700 font-bold float-left hover:text-teal-500" (click)="this.debug()">Dump Values</button> -->
             </fieldset>
         </form>
     </div>
 
-    <div class="card flex-grow">
+    <div class="card flex-grow flex flex-col justify-start">
         <form novalidate #plotControl="ngForm">
             <fieldset>
                 <legend class="text-teal-500 mb-4">Plot Controls</legend>
@@ -92,11 +92,35 @@
                 </div>
             </fieldset>
         </form>
-        <p class="text-teal-500 my-4">Response</p>
-            <plotly-plot 
-            [data]="plotData"
-            [layout]="plotLayout"
-            [useResizeHandler]="true" 
-            [style]="{position: 'relative', width: '100%'}"></plotly-plot>
+        <div class="mb-4">
+            <span class="text-teal-500 my-4">Response</span>
+            <button class="text-gray-500 text-xs font-semibold float-right hover:text-teal-500" (click)="showModalData = !showModalData">{{ showModalData ? "Switch to Graph" : "Switch to Table" }}</button>
+        </div>
+        <plotly-plot *ngIf="!showModalData" class="flex-grow" 
+        [data]="plotData"
+        [layout]="plotLayout"
+        [useResizeHandler]="true" 
+        [style]="{position: 'relative', width: '100%'}">
+        </plotly-plot>
+        <div *ngIf="showModalData" class="flex-grow max-h-screen overflow-auto">
+            <table class="table-auto text-xs">
+                <thead>
+                    <th class="px-4 py-2">Time</th>
+                    <th class="px-4 py-2">Excitation</th>
+                    <th class="px-4 py-2">Acceleration</th>
+                    <th class="px-4 py-2">Velocity</th>
+                    <th class="px-4 py-2">Displacement</th>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let row of data.series[0]; index as i">
+                        <td class="border px-2 py-1">{{row.x | number }}</td>
+                        <td class="border px-2 py-1">{{row.y | number }}</td>
+                        <td class="border px-2 py-1">{{data.series[2][i].y | number }}</td>
+                        <td class="border px-2 py-1">{{data.series[3][i].y | number }}</td>
+                        <td class="border px-2 py-1">{{data.series[4][i].y | number }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
