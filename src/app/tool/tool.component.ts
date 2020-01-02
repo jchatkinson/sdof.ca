@@ -14,9 +14,9 @@ export class ToolComponent implements OnInit, AfterContentInit, OnDestroy {
   @ViewChild('plotControl', {static:true}) plotControl: NgForm;
   showModalData = false;
   functionTypes: any;
-  plotOptions = [{name: "Excitation", val: 0},{name: "Response Spectrum", val: 1},{name: "Acceleration", val: 2},{name: "Velocity", val: 3},{name: "Displacement", val: 4}];
-  plotData = [{name: 'Excitation', x:[0,1,2], y:[0,1,2], type:'scatter', mode:'lines+points', marker:{color: 'teal'}}];
-  plotLayout = {autosize: true, margin: {l:20, r:0, t:0, b:20}};
+  plotOptions = [{name: "Excitation", val: 0},{name: "Acceleration", val: 1},{name: "Velocity", val: 2},{name: "Displacement", val: 3},{name: "Acceleration Response Spectrum", val: 4},{name: "Velocity Response Spectrum", val: 5},{name: "Displacement Response Spectrum", val: 6}];
+  plotData = [{name: 'Excitation', x:[0], y:[0], type:'scatter', mode:'lines+points', marker:{color: 'teal'}}];
+  plotLayout = {autosize: true, margin: {l:24, r:0, t:0, b:24}};
   data: IAnalysisData;
   $subs: Subscription[] = [];
   
@@ -39,9 +39,13 @@ export class ToolComponent implements OnInit, AfterContentInit, OnDestroy {
         if (this.myform.valid) {
           this.data.series[0] = this.as.createTimeSeries(this.data);
           let result = this.as.analyze(this.data.period, this.data.damp, this.data.series[0].map(pt=>pt.y), this.data.dt, this.data.totaltime);
-          this.data.series[2] = result.a;
-          this.data.series[3] = result.v;
-          this.data.series[4] = result.u;
+          this.data.series[1] = result.a;
+          this.data.series[2] = result.v;
+          this.data.series[3] = result.u;
+          let spectra = this.as.responsespectrum(this.data.series[0], this.data.damp, 0.01, 10, 128);
+          this.data.series[4] = spectra.ARS;
+          this.data.series[5] = spectra.VRS;
+          this.data.series[6] = spectra.DRS;
           this.updatePlot(this.plotOptions[this.data.yaxis].name, this.data.series[this.data.yaxis]);
         }
       }
@@ -91,10 +95,17 @@ export class ToolComponent implements OnInit, AfterContentInit, OnDestroy {
     this.data.func = this.functionTypes[id];
     if (id===8) {
       this.data.dt = 0.01;
-      this.data.excitetime = 40;
+      this.data.excitetime = 41;
       this.data.totaltime = 60;
       this.data.scalefactor = 9.81;      
     }
+  }
+
+  calculateFFT() {
+    // this.as.calculateFFT(this.data.series[0]);
+    let spectra = this.as.responsespectrum(this.data.series[0], this.data.damp, 0.01, 10, 128);
+    this.data.series[1] = spectra.ARS;
+    console.log(spectra);
   }
 
   debug() {
