@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { HttpClient, HttpRequest } from '@angular/common/http';
 import { Observable, AsyncSubject } from 'rxjs';
 
 @Injectable({
@@ -16,6 +17,7 @@ export class AnalysisService {
 		{ name: 'peernga', fullname: 'PEER NGA File', type: 'From File', note: 'Note: The file must formatted as an unaltered <a class="block underline" href="http://ngawest2.berkeley.edu/" target="_blank">PEER NGA Record</a>' },
 		{ name: 'kobe', fullname: 'Kobe (1995)', type: 'Ground Motion', note: 'This is an unscaled ground motion from the 1995 Kobe Earthquake, Kakokawa Station, 000 Component' }
 	];
+	kobe: IData[];
 
 	data: IAnalysisData = {
 		period: 0.5,
@@ -37,9 +39,16 @@ export class AnalysisService {
 		procfile: [],
 	};
 
-	constructor() {
+	constructor(private http: HttpClient) {
 		this.data.series[0] = this.createTimeSeries(this.data)
+		this.loadJSON();
 	}
+
+	loadJSON() {
+		this.http.get('/assets/kobe.json').subscribe((res:IData[]) => {
+			this.kobe = res;
+		});
+	};
 
 	getFunctionType(fid?: number) {
 		if (fid) {
@@ -102,6 +111,10 @@ export class AnalysisService {
 		let npts = Math.ceil(data.excitetime / data.dt);
 		let series = [];
 
+		if (npts > 100000) {
+			return [{ x: 0, y: 0 }];
+		};
+
 		switch (data.func.name) {
 			case 'sine':
 				var eqn = function (data: IAnalysisData, t: number) {
@@ -115,7 +128,7 @@ export class AnalysisService {
 				break;
 			case 'square':
 				var eqn = function (data: IAnalysisData, t: number) {
-					return data.amp * (2 * Math.floor((t + data.hshift) / data.funcperiod) - Math.floor(2 * (t + data.hshift) / data.funcperiod) + 1) + data.vshift;
+					return data.amp * (2 * Math.floor((t + data.hshift) / data.funcperiod) - Math.floor(2 * (t + data.hshift) / data.funcperiod) + 1) + data.vshift - 0.5*data.amp;
 				}
 				break;
 			case 'rampup':
@@ -175,18 +188,28 @@ export class AnalysisService {
 				break;
 			case 'peernga': //procfile is string of acc values [a1,a2,a3,...]
 				var eqn = function (data: IAnalysisData, t: number) {
-					if (data.procfile.length > 0 && t <= data.excitetime && t <= data.dt * data.procfile.length) {
+					if (data.procfile.length > 0 && t <= data.excitetime && t <= data.dt * (data.procfile.length - 1)) {
 						return data.scalefactor * data.procfile[Math.round(t / data.dt)];
 					} else {
 						return 0;
 					};
 				}
-				break;
+			case 'kobe':
+				let acc = this.kobe.map(d => d.y/9.81);
+				let time = this.kobe.map(d => d.x);
+				var eqn = function (data: IAnalysisData, t: number) {				
+					if (t <= time[time.length-1]) {
+						return data.scalefactor * acc[Math.round(t/data.dt)];
+					} else {
+						return 0;
+					};
+				};
+			break;
 		};
 
 		let yt = 0.0;
 		let i: number, t: number;
-		for (i = 0; i < npts - 1; i++) {
+		for (i = 0; i < npts; i++) {
 			t = i * data.dt;
 			yt = eqn(data, t);
 			series.push({
@@ -226,7 +249,12 @@ export class AnalysisService {
 	analyze(T: number, zeta: number, ag: any[], dt: number, ttotal: number): ({ u: IData[], a: IData[], v: IData[] }) {
 		zeta = zeta / 100.0
 		if (dt === 0) {
-			return;
+			console.warn('dt is zero! Nothing to calculate');
+			return { u: [{ x: 0, y: 0 }], a: [{ x: 0, y: 0 }], v: [{ x: 0, y: 0 }] };
+		}
+		if (ttotal / dt > 100000) {
+			console.warn('Too many points! Skipping calculation to avoid stackoverflow');
+			return { u: [{ x: 0, y: 0 }], a: [{ x: 0, y: 0 }], v: [{ x: 0, y: 0 }] };
 		}
 		var t = 0;
 		var npts_ag = ag.length;
@@ -272,14 +300,22 @@ export class AnalysisService {
 		};
 	}
 
-	responsespectrum(signal: IData[], zeta: number, Tmin: number, Tmax: number, npts: number): ({ARS: IData[], VRS: IData[], DRS: IData[]}) {
+	responsespectrum(signal: IData[], zeta: number, Tmin: number, Tmax: number, npts: number): ({ ARS: IData[], VRS: IData[], DRS: IData[] }) {
 		const ag = signal.map(a => a.y);
 		const dt = signal[1].x - signal[0].x;
-		const ttotal = signal[signal.length-1].x + Tmax * 2;
+		const ttotal = signal[signal.length - 1].x + Tmax * 2;
 		const fmax = 1 / Tmin, fmin = 1 / Tmax;
 		const qv = Math.pow(fmax / fmin, 1 / npts);
 		let result: { u: number; a: number; v: number; }, T = 0;
 		let ARS: IData[] = [], VRS: IData[] = [], DRS: IData[] = [];
+		if (dt === 0) {
+			console.warn('dt is zero! Nothing to calculate');
+			return { ARS: ARS, VRS: VRS, DRS: DRS };
+		}
+		if (ttotal / dt > 100000) {
+			console.warn('Too many points! Skipping calculation to avoid stackoverflow');
+			return { ARS: ARS, VRS: VRS, DRS: DRS };
+		}
 		for (let ii = 0; ii < npts; ii++) {
 			T = 1 / (fmin * Math.pow(qv, ii));
 			result = this.analyzeForMax(T, zeta, ag, dt, ttotal);
@@ -293,7 +329,10 @@ export class AnalysisService {
 	analyzeForMax(T: number, zeta: number, ag: any[], dt: number, ttotal: number): ({ u: number, a: number, v: number }) {
 		zeta = zeta / 100.0
 		if (dt === 0) {
-			return;
+			return { u: 0, a: 0, v: 0 };
+		}
+		if (ttotal / dt > 100000) {
+			return { u: 0, a: 0, v: 0 };
 		}
 		var t = 0;
 		var npts_ag = ag.length;
@@ -327,10 +366,10 @@ export class AnalysisService {
 			agi = (i < npts_ag) ? ag[i] : 0.0;
 			agip1 = (i < npts_ag - 1) ? ag[i + 1] : 0.0;
 			t = i * dt;
-			u.push(A * u[i] + B * v[i] + C * agi + D * agip1 );
-			v.push(Ap * u[i] + Bp * v[i] + Cp * agi + Dp * agip1 );
-			pr.push( k * u[i + 1] );
-			a.push(-agip1 - 2.0 * zeta * w * v[i + 1] - pr[i + 1] / m );
+			u.push(A * u[i] + B * v[i] + C * agi + D * agip1);
+			v.push(Ap * u[i] + Bp * v[i] + Cp * agi + Dp * agip1);
+			pr.push(k * u[i + 1]);
+			a.push(-agip1 - 2.0 * zeta * w * v[i + 1] - pr[i + 1] / m);
 		};
 		return {
 			u: Math.max(Math.max(...u), Math.abs(Math.min(...u))),
